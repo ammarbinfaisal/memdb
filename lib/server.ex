@@ -94,6 +94,9 @@ defmodule Server do
         value = GenServer.call(KeyValue, {:delete, key})
         IO.inspect(value)
         :gen_tcp.send(client,"+OK\r\n")
+      {:array, [bulk: "info", bulk: "replication"]} ->
+        fake_info = "role:master"
+        :gen_tcp.send(client, encode_bulk(fake_info))
       _ -> :gen_tcp.send(client, "Invalid command\r\n")
     end
   end
