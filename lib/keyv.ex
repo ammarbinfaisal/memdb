@@ -1,6 +1,4 @@
 defmodule KeyValue do
-  @behaviour :gen_server
-
   use GenServer
 
   def start_link do
