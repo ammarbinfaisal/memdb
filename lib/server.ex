@@ -16,24 +16,24 @@ defmodule Server do
 
   def parse_array(data, count, acc \\ []) do
     case count do
-      0 -> {%{type: :array, data: acc}, data}
+      0 -> {{:array, acc}, data}
       _ ->
         {parsed, rest} = parse(data)
         parse_array(rest, count - 1, acc ++ [parsed])
     end
   end
 
-  def parse_bulk(data, count) do
+  def parse_bulk(data, _count) do
     case data do
       [s | rest] ->
-        {%{type: :bulk, data: s}, rest}
+        {{:bulk, s}, rest}
     end
   end
 
   def parse_simple(data) do
     case data do
       [s | rest] ->
-        {%{type: :simple, data: s}, rest}
+        {{:simple, s}, rest}
     end
   end
 
@@ -63,7 +63,24 @@ defmodule Server do
   end
 
   def split_and_parse(data) do
-    parse(String.split(data, "\r\n"))
+    {parsed, _} = parse(String.split(data, "\r\n"))
+    parsed
+  end
+
+  def encode_bulk(data) do
+    "$#{byte_size(data)}\r\n#{data}\r\n"
+  end
+
+  def reply(client, data) do
+    # map over the parsed data and send the response
+    case data do
+      # handle echo and ping commands
+      {:array, [bulk: "echo", bulk: s]} ->
+        :gen_tcp.send(client, encode_bulk(s))
+      {:array, [bulk: "ping"]} ->
+        :gen_tcp.send(client, "+PONG\r\n")
+      _ -> :gen_tcp.send(client, "Invalid command\r\n")
+    end
   end
 
   def loop(client) do
@@ -72,7 +89,7 @@ defmodule Server do
         IO.puts "Received: #{data}"
         parsed = split_and_parse(data)
         IO.inspect parsed
-        :gen_tcp.send(client, "+PONG\r\n")
+        reply(client, parsed)
         loop(client)
       {:error, :closed} ->
         IO.puts "Client disconnected"
