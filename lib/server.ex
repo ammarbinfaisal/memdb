@@ -16,7 +16,7 @@ defmodule Server do
 
   def loop(client) do
     case :gen_tcp.recv(client, 0) do
-      {:ok, data} ->
+      {:ok, _data} ->
         :gen_tcp.send(client, "+PONG\r\n")
         loop(client)
       {:error, :closed} ->
