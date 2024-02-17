@@ -5,8 +5,9 @@ defmodule Server do
 
   use Application
 
-  def start(_type, _args) do
-    Supervisor.start_link([{Task, fn -> Server.listen() end}], strategy: :one_for_one)
+  def start(_type, args) do
+    port = args[:port] || 6379
+    Supervisor.start_link([{Task, fn -> Server.listen(port) end}], strategy: :one_for_one)
   end
 
   def handle_client(client) do
@@ -120,8 +121,8 @@ defmodule Server do
   @doc """
   Listen for incoming connections
   """
-  def listen() do
-    {:ok, socket} = :gen_tcp.listen(6379, [:binary, active: false, reuseaddr: true])
+  def listen(port) do
+    {:ok, socket} = :gen_tcp.listen(port, [:binary, active: false, reuseaddr: true])
 
     KeyValue.start_link
 
