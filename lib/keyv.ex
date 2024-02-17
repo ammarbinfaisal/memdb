@@ -18,6 +18,6 @@ defmodule KeyValue do
   end
 
   def handle_call({:delete, key}, _from, state) do
-    {:reply, Map.delete(state, key), state}
+    {:reply, Map.get(state, key), Map.delete(state, key)}
   end
 end

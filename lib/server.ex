@@ -9,9 +9,9 @@ defmodule Server do
     Supervisor.start_link([{Task, fn -> Server.listen() end}], strategy: :one_for_one)
   end
 
-  def handle_client(client, p) do
+  def handle_client(client) do
     IO.puts "Client connected"
-    loop(client, p)
+    loop(client)
   end
 
   def parse_array(data, count, acc \\ []) do
@@ -57,8 +57,15 @@ defmodule Server do
     end
   end
 
-  def exec(data, client, p) do
+  defp expire(key, ttl) do
+    :timer.sleep(ttl)
+    IO.puts "Expiring key #{key}"
+    GenServer.call(KeyValue, {:delete, key})
+  end
+
+  def exec(data, client) do
     {parsed, _} = parse(String.split(data, "\r\n"))
+    IO.inspect(parsed)
     case parsed do
       # handle echo and ping commands
       {:array, [bulk: "echo", bulk: s]} ->
@@ -66,23 +73,22 @@ defmodule Server do
       {:array, [bulk: "ping"]} ->
         :gen_tcp.send(client, "+PONG\r\n")
       {:array, [bulk: "get", bulk: key]} ->
-        send(p, {:get, key, self()})
-        receive do
-          {:reply, value} ->
-            :gen_tcp.send(client, encode_bulk(value))
+        value = GenServer.call(KeyValue, {:get, key})
+        case value do
+          nil -> :gen_tcp.send(client, "$-1\r\n")
+          _ -> :gen_tcp.send(client, encode_bulk(value))
         end
       {:array, [bulk: "set", bulk: key, bulk: value]} ->
-        send(p, {:set, key, value, self()})
-        receive do
-          {:reply, :ok} ->
-            :gen_tcp.send(client, "+OK\r\n")
-        end
+        GenServer.call(KeyValue, {:set, key, value})
+        :gen_tcp.send(client, "+OK\r\n")
+      {:array, [bulk: "set", bulk: key, bulk: value, bulk: "px", bulk: ttl]} ->
+        GenServer.call(KeyValue, {:set, key, value})
+        spawn(fn -> expire(key, String.to_integer(ttl)) end)
+        :gen_tcp.send(client, "+OK\r\n")
       {:array, [bulk: "delete", bulk: key]} ->
-        send(p, {:delete, key, self()})
-        receive do
-          {:reply, value} ->
-            :gen_tcp.send(client, encode_bulk(value))
-        end
+        value = GenServer.call(KeyValue, {:delete, key})
+        IO.inspect(value)
+        :gen_tcp.send(client,"+OK\r\n")
       _ -> :gen_tcp.send(client, "Invalid command\r\n")
     end
   end
@@ -91,45 +97,24 @@ defmodule Server do
     "$#{byte_size(data)}\r\n#{data}\r\n"
   end
 
-  def loop(client, p) do
+  def loop(client) do
     case :gen_tcp.recv(client, 0) do
       {:ok, data} ->
-        exec(data, client, p)
-        loop(client, p)
+        exec(data, client)
+        loop(client)
       {:error, :closed} ->
         IO.puts "Client disconnected"
     end
   end
 
-  defp loop_acceptor(socket, p) do
+  defp loop_acceptor(socket) do
     case :gen_tcp.accept(socket) do
       {:ok, client} ->
-        spawn(fn -> handle_client(client, p) end)
-        loop_acceptor(socket, p)
+        spawn(fn -> handle_client(client) end)
+        loop_acceptor(socket)
       {:error, reason} ->
         IO.puts "Error accepting connection: #{reason}"
     end
-  end
-
-  def handler() do
-    receive do
-      {:get, key, client} ->
-        value = GenServer.call(KeyValue, {:get, key})
-        case value do
-          nil -> send(client, {:reply, "-1"})
-          _ -> send(client, {:reply, value})
-        end
-      {:set, key, value, client} ->
-        GenServer.call(KeyValue, {:set, key, value})
-        send(client, {:reply, :ok})
-      {:delete, key, client} ->
-        value = GenServer.call(KeyValue, {:delete, key})
-        case value do
-          nil -> send(client, {:reply, "-1"})
-          _ -> send(client, {:reply, value})
-        end
-    end
-    handler()
   end
 
   @doc """
@@ -140,8 +125,6 @@ defmodule Server do
 
     KeyValue.start_link
 
-    p = self()
-    spawn(fn -> loop_acceptor(socket, p) end)
-    handler()
+    loop_acceptor(socket)
   end
 end
