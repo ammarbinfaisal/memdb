@@ -1,4 +1,4 @@
 #!/bin/sh
 set -e
 shift
-exec mix run --no-halt -- "empty.exs" "$@"
+exec mix run --no-halt -- "$@"
