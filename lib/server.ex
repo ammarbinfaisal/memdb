@@ -9,8 +9,8 @@ defmodule Server do
     port =
       # port
       System.argv() |>
-      Enum.at(1) |>
-      String.to_integer()
+      Enum.at(1)
+    port = String.to_integer(port || "6379")
     Supervisor.start_link([{Task, fn -> Server.listen(port) end}], strategy: :one_for_one)
   end
 
