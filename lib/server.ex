@@ -41,17 +41,12 @@ defmodule Server do
   Parse the incoming redis command
   """
   def parse(data) do
-    # if starts with * then it's a multi-bulk request
-    # if starts with $ then it's a bulk request
-    # if starts with + then it's a status request
-    # for now, just parse these three types
     regex = ~r/^(\*|\$|\+)(\d+)$/
     case data do
       # check if it starts with *
       [s | rest] ->
         case Regex.run(regex, s) do
           [_, c, count] ->
-            IO.inspect c
             case c do
               "*" -> parse_array(rest, String.to_integer(count))
               "$" -> parse_bulk(rest, String.to_integer(count))
@@ -86,9 +81,8 @@ defmodule Server do
   def loop(client) do
     case :gen_tcp.recv(client, 0) do
       {:ok, data} ->
-        IO.puts "Received: #{data}"
         parsed = split_and_parse(data)
-        IO.inspect parsed
+        # IO.inspect parsed
         reply(client, parsed)
         loop(client)
       {:error, :closed} ->
