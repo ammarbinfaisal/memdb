@@ -5,8 +5,11 @@ defmodule Server do
 
   use Application
 
-  def start(_type, args) do
-    port = args[:port] || 6379
+  def start(_type, _args) do
+    port =
+      System.argv() |>
+      OptionParser.parse(strict: [start: :integer, end: :integer]) |>
+      elem(1) |> hd |> String.to_integer
     Supervisor.start_link([{Task, fn -> Server.listen(port) end}], strategy: :one_for_one)
   end
 
