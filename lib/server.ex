@@ -7,9 +7,11 @@ defmodule Server do
 
   def start(_type, _args) do
     port =
+      # port
       System.argv() |>
       OptionParser.parse(strict: [start: :integer, end: :integer]) |>
-      elem(1) |> hd |> String.to_integer
+      elem(1) |>
+      Keyword.get(:port, 6379)
     Supervisor.start_link([{Task, fn -> Server.listen(port) end}], strategy: :one_for_one)
   end
 
