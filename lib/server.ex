@@ -137,7 +137,7 @@ defmodule Server do
 
       {:array, [bulk: "psync", bulk: "?", bulk: "-1"]} ->
         IO.puts("PSYNC requested")
-        :gen_tcp.send(client, "+OK\r\n")
+        :gen_tcp.send(client, "+FULLRESYNC\r\n")
 
       _ ->
         :gen_tcp.send(client, "Invalid command\r\n")
