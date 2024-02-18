@@ -86,7 +86,8 @@ defmodule Server do
     IO.puts("executing:")
     IO.inspect(parsed)
 
-    rdb_fake = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
+    rdb_fake =
+      "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
       |> Base.decode64!()
 
     propagate =
@@ -118,7 +119,25 @@ defmodule Server do
         {:array, [bulk: "set", bulk: key, bulk: value, bulk: "px", bulk: ttl]} ->
           GenServer.call(KeyValue, {:set, key, value})
           spawn(fn -> expire(key, String.to_integer(ttl)) end)
-          :gen_tcp.send(client, "+OK\r\n")
+
+          if info.master do
+            :gen_tcp.send(client, "+OK\r\n")
+          else
+            # propagate to master
+            case :gen_tcp.connect(info.master_host, info.master_port, [
+                   :binary,
+                   active: false,
+                   packet: :line
+                 ]) do
+              {:ok, conn} ->
+                :gen_tcp.send(conn, data)
+                :gen_tcp.close(conn)
+
+              {:error, reason} ->
+                IO.puts("Error connecting to master: #{reason}")
+            end
+          end
+
           true
 
         {:array, [bulk: "delete", bulk: key]} ->
@@ -162,7 +181,11 @@ defmodule Server do
       IO.inspect(slaves)
 
       Enum.each(slaves, fn pid ->
-        case :gen_tcp.connect({127, 0, 0, 1}, String.to_integer(pid), [:binary, active: false, packet: :line]) do
+        case :gen_tcp.connect({127, 0, 0, 1}, String.to_integer(pid), [
+               :binary,
+               active: false,
+               packet: :line
+             ]) do
           {:ok, conn} ->
             :gen_tcp.send(conn, data)
             :gen_tcp.close(conn)
@@ -282,7 +305,7 @@ defmodule Server do
                 role: "slave",
                 master: false,
                 run_id: run_id,
-                master_host: master_host,
+                master_host: ip,
                 master_port: master_port
               }
           end
