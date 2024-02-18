@@ -103,6 +103,15 @@ defmodule Server do
           "slave" -> "role:slave\nmaster_host:#{info.master_host}\nmaster_port:#{info.master_port}\n"
         end
         :gen_tcp.send(client, encode_bulk(info))
+      {:array, [bulk: "replconf", bulk: "listening-port", bulk: port]} ->
+        IO.puts "Listening port set to #{port}"
+        :gen_tcp.send(client, "+OK\r\n")
+      {:array, [bulk: "replconf", bulk: "capa", bulk: "psync2"]} ->
+        IO.puts "PSYNC2 enabled"
+        :gen_tcp.send(client, "+OK\r\n")
+      {:array, [bulk: "psync", bulk: "?", bulk: "-1"]} ->
+        IO.puts "PSYNC requested"
+        :gen_tcp.send(client, "+OK\r\n")
       _ -> :gen_tcp.send(client, "Invalid command\r\n")
     end
   end
@@ -167,6 +176,7 @@ defmodule Server do
             IO.inspect :gen_tcp.recv(conn, 0)
             :gen_tcp.send(conn, encode_array([encode_bulk("psync"), encode_bulk("?"), encode_bulk("-1")], 3))
             IO.inspect :gen_tcp.recv(conn, 0)
+            :gen_tcp.clone(conn)
             %{
               role: "slave",
               run_id: run_id,
