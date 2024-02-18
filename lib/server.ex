@@ -6,17 +6,20 @@ defmodule Server do
   use Application
 
   def start(_type, _args) do
-    port =
-      # port
-      System.argv() |>
-      Enum.at(1)
+    args = System.argv()
+    port = args |> Enum.at(1)
     port = String.to_integer(port || "6379")
-    Supervisor.start_link([{Task, fn -> Server.listen(port) end}], strategy: :one_for_one)
-  end
-
-  def handle_client(client) do
-    IO.puts "Client connected"
-    loop(client)
+    # if replicaof is set, then we are a slave
+    # find --replicaof host port
+    replicaof_host = args |> Enum.at(3)
+    replicaof_port = args |> Enum.at(4)
+    if replicaof_host && replicaof_port do
+      IO.puts "Starting as a slave"
+      listen(port, {replicaof_host, String.to_integer(replicaof_port)})
+    else
+      IO.puts "Starting as a master"
+      listen(port, nil)
+    end
   end
 
   def parse_array(data, count, acc \\ []) do
@@ -68,7 +71,7 @@ defmodule Server do
     GenServer.call(KeyValue, {:delete, key})
   end
 
-  def exec(data, client) do
+  def exec(data, client, master) do
     {parsed, _} = parse(String.split(data, "\r\n"))
     IO.inspect(parsed)
     case parsed do
@@ -95,8 +98,11 @@ defmodule Server do
         IO.inspect(value)
         :gen_tcp.send(client,"+OK\r\n")
       {:array, [bulk: "info", bulk: "replication"]} ->
-        fake_info = "role:master"
-        :gen_tcp.send(client, encode_bulk(fake_info))
+        info = case master do
+          nil -> "role:master"
+          {host, port} -> "role:slave\nmaster_host:#{host}\nmaster_port:#{port}"
+        end
+        :gen_tcp.send(client, encode_bulk(info))
       _ -> :gen_tcp.send(client, "Invalid command\r\n")
     end
   end
@@ -105,21 +111,21 @@ defmodule Server do
     "$#{byte_size(data)}\r\n#{data}\r\n"
   end
 
-  def loop(client) do
+  def loop(client, master) do
     case :gen_tcp.recv(client, 0) do
       {:ok, data} ->
-        exec(data, client)
-        loop(client)
+        exec(data, client, master)
+        loop(client, master)
       {:error, :closed} ->
         IO.puts "Client disconnected"
     end
   end
 
-  defp loop_acceptor(socket) do
+  defp loop_acceptor(socket, master) do
     case :gen_tcp.accept(socket) do
       {:ok, client} ->
-        spawn(fn -> handle_client(client) end)
-        loop_acceptor(socket)
+        spawn(fn -> loop(client, master) end)
+        loop_acceptor(socket, master)
       {:error, reason} ->
         IO.puts "Error accepting connection: #{reason}"
     end
@@ -128,11 +134,16 @@ defmodule Server do
   @doc """
   Listen for incoming connections
   """
-  def listen(port) do
-    {:ok, socket} = :gen_tcp.listen(port, [:binary, active: false, reuseaddr: true])
+  def listen(port, master) do
+    res = :gen_tcp.listen(port, [:binary, active: false, reuseaddr: true])
 
-    KeyValue.start_link
-
-    loop_acceptor(socket)
+    case res do
+      {:ok, socket} ->
+        KeyValue.start_link
+        loop_acceptor(socket, master)
+      {:error, err} ->
+        IO.inspect err
+        System.halt(1)
+    end
   end
 end
