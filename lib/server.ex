@@ -162,9 +162,14 @@ defmodule Server do
       IO.inspect(slaves)
 
       Enum.each(slaves, fn pid ->
-        {:ok, conn} =
-          :gen_tcp.connect({127, 0, 0, 1}, String.to_integer(pid), [:binary, active: false, packet: :line])
+        case :gen_tcp.connect({127, 0, 0, 1}, String.to_integer(pid), [:binary, active: false, packet: :line]) do
+          {:ok, conn} ->
+            :gen_tcp.send(conn, data)
+            :gen_tcp.close(conn)
 
+          {:error, reason} ->
+            IO.puts("Error connecting to slave: #{reason}")
+        end
         :gen_tcp.send(conn, data)
         :gen_tcp.close(conn)
       end)
