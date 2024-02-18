@@ -150,7 +150,7 @@ defmodule Server do
             role: "master",
             run_id: run_id
           }
-          {host, port} ->
+          {master_host, master_port} ->
             # handshake with master
             opts = [:binary, :inet, active: false, packet: :line]
             # convert ip string to tuple
@@ -168,8 +168,8 @@ defmodule Server do
             %{
               role: "slave",
               run_id: run_id,
-              master_host: host,
-              master_port: port
+              master_host: master_host,
+              master_port: master_port
             }
         end
         loop_acceptor(socket, info)
