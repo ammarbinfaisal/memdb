@@ -161,16 +161,10 @@ defmodule Server do
             {:ok, conn} = :gen_tcp.connect(ip, port, opts)
             IO.inspect conn
             :gen_tcp.send(conn, encode_array([encode_bulk("ping")], 1))
-            # case :gen_tcp.recv(conn, 0) do
-            #   {:ok, data} ->
-            #     IO.inspect data
-            #     :gen_tcp.send(conn, encode_array([encode_bulk("replconf"), encode_bulk("ack"), encode_bulk(run_id)], 3))
-            #     case :gen_tcp.recv(conn, 0) do
-            #       {:ok, data} ->
-            #         IO.inspect data
-            #     end
-            # end
-            :gen_tcp.close(conn)
+            :gen_tcp.send(conn, encode_array([encode_bulk("replconf"), encode_bulk(Integer.to_string(port))], 2))
+            :gen_tcp.send(conn, encode_array([encode_bulk("replconf"), encode_bulk("capa"), encode_bulk("eof")], 3))
+            res = :gen_tcp.recv(conn, 0)
+            IO.inspect res
             %{
               role: "slave",
               run_id: run_id,
