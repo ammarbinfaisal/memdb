@@ -154,9 +154,9 @@ defmodule Server do
             # handshake with master
             opts = [:binary, :inet, active: false, packet: :line]
             # convert ip string to tuple
-            ip = case host do
+            ip = case master_host do
               "localhost" -> {127, 0, 0, 1}
-              _ -> String.split(host, ".") |> Enum.map(&String.to_integer/1) |> List.to_tuple
+              _ -> String.split(master_host, ".") |> Enum.map(&String.to_integer/1) |> List.to_tuple
             end
             {:ok, conn} = :gen_tcp.connect(ip, port, opts)
             :gen_tcp.send(conn, encode_array([encode_bulk("ping")], 1))
@@ -164,6 +164,8 @@ defmodule Server do
             :gen_tcp.send(conn, encode_array([encode_bulk("replconf"), encode_bulk("listening-port"), encode_bulk(Integer.to_string(port))], 3))
             IO.inspect :gen_tcp.recv(conn, 0)
             :gen_tcp.send(conn, encode_array([encode_bulk("replconf"), encode_bulk("capa"), encode_bulk("psync2")], 3))
+            IO.inspect :gen_tcp.recv(conn, 0)
+            :gen_tcp.send(conn, encode_array([encode_bulk("psync"), encode_bulk("?"), encode_bulk("-1")], 3))
             IO.inspect :gen_tcp.recv(conn, 0)
             %{
               role: "slave",
