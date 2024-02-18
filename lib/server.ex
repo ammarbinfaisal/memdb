@@ -112,7 +112,7 @@ defmodule Server do
   end
 
   def encode_array(data, length) do
-    "*#{length}\r\n#{Enum.join(data)}\r\n"
+    "*#{length}\r\n#{Enum.join(data)}"
   end
 
   def loop(client, master) do
@@ -159,12 +159,12 @@ defmodule Server do
               _ -> String.split(host, ".") |> Enum.map(&String.to_integer/1) |> List.to_tuple
             end
             {:ok, conn} = :gen_tcp.connect(ip, port, opts)
-            IO.inspect conn
             :gen_tcp.send(conn, encode_array([encode_bulk("ping")], 1))
-            :gen_tcp.send(conn, encode_array([encode_bulk("replconf"), encode_bulk(Integer.to_string(port))], 2))
-            :gen_tcp.send(conn, encode_array([encode_bulk("replconf"), encode_bulk("capa"), encode_bulk("eof")], 3))
-            res = :gen_tcp.recv(conn, 0)
-            IO.inspect res
+            IO.inspect :gen_tcp.recv(conn, 0)
+            :gen_tcp.send(conn, encode_array([encode_bulk("replconf"), encode_bulk("listening-port"), encode_bulk(Integer.to_string(port))], 3))
+            IO.inspect :gen_tcp.recv(conn, 0)
+            :gen_tcp.send(conn, encode_array([encode_bulk("replconf"), encode_bulk("capa"), encode_bulk("psync2")], 3))
+            IO.inspect :gen_tcp.recv(conn, 0)
             %{
               role: "slave",
               run_id: run_id,
