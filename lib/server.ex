@@ -83,64 +83,91 @@ defmodule Server do
 
   def exec(data, client, info) do
     {parsed, _} = parse(String.split(data, "\r\n"))
+    IO.puts("executing:")
     IO.inspect(parsed)
 
-    case parsed do
-      # handle echo and ping commands
-      {:array, [bulk: "echo", bulk: s]} ->
-        :gen_tcp.send(client, encode_bulk(s))
+    rdb_fake = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
+      |> Base.decode64!()
 
-      {:array, [bulk: "ping"]} ->
-        :gen_tcp.send(client, "+PONG\r\n")
+    propagate =
+      case parsed do
+        # handle echo and ping commands
+        {:array, [bulk: "echo", bulk: s]} ->
+          :gen_tcp.send(client, encode_bulk(s))
+          true
 
-      {:array, [bulk: "get", bulk: key]} ->
-        value = GenServer.call(KeyValue, {:get, key})
+        {:array, [bulk: "ping"]} ->
+          :gen_tcp.send(client, "+PONG\r\n")
+          true
 
-        case value do
-          nil -> :gen_tcp.send(client, "$-1\r\n")
-          _ -> :gen_tcp.send(client, encode_bulk(value))
-        end
+        {:array, [bulk: "get", bulk: key]} ->
+          value = GenServer.call(KeyValue, {:get, key})
 
-      {:array, [bulk: "set", bulk: key, bulk: value]} ->
-        GenServer.call(KeyValue, {:set, key, value})
-        :gen_tcp.send(client, "+OK\r\n")
-
-      {:array, [bulk: "set", bulk: key, bulk: value, bulk: "px", bulk: ttl]} ->
-        GenServer.call(KeyValue, {:set, key, value})
-        spawn(fn -> expire(key, String.to_integer(ttl)) end)
-        :gen_tcp.send(client, "+OK\r\n")
-
-      {:array, [bulk: "delete", bulk: key]} ->
-        value = GenServer.call(KeyValue, {:delete, key})
-        IO.inspect(value)
-        :gen_tcp.send(client, "+OK\r\n")
-
-      {:array, [bulk: "info", bulk: "replication"]} ->
-        info =
-          case info.role do
-            "master" ->
-              "role:master\nmaster_replid:#{info.run_id}\nmaster_repl_offset:0\n"
-
-            "slave" ->
-              "role:slave\nmaster_host:#{info.master_host}\nmaster_port:#{info.master_port}\n"
+          case value do
+            nil -> :gen_tcp.send(client, "$-1\r\n")
+            _ -> :gen_tcp.send(client, encode_bulk(value))
           end
 
-        :gen_tcp.send(client, encode_bulk(info))
+          true
 
-      {:array, [bulk: "replconf", bulk: "listening-port", bulk: port]} ->
-        IO.puts("Listening port set to #{port}")
-        :gen_tcp.send(client, "+OK\r\n")
+        {:array, [bulk: "set", bulk: key, bulk: value]} ->
+          GenServer.call(KeyValue, {:set, key, value})
+          :gen_tcp.send(client, "+OK\r\n")
+          true
 
-      {:array, [bulk: "replconf", bulk: "capa", bulk: "psync2"]} ->
-        IO.puts("PSYNC2 enabled")
-        :gen_tcp.send(client, "+OK\r\n")
+        {:array, [bulk: "set", bulk: key, bulk: value, bulk: "px", bulk: ttl]} ->
+          GenServer.call(KeyValue, {:set, key, value})
+          spawn(fn -> expire(key, String.to_integer(ttl)) end)
+          :gen_tcp.send(client, "+OK\r\n")
+          true
 
-      {:array, [bulk: "psync", bulk: "?", bulk: "-1"]} ->
-        IO.puts("PSYNC requested")
-        :gen_tcp.send(client, "+FULLRESYNC #{info.run_id} 0\r\n")
+        {:array, [bulk: "delete", bulk: key]} ->
+          value = GenServer.call(KeyValue, {:delete, key})
+          IO.inspect(value)
+          :gen_tcp.send(client, "+OK\r\n")
+          true
 
-      _ ->
-        :gen_tcp.send(client, "Invalid command\r\n")
+        {:array, [bulk: "info", bulk: "replication"]} ->
+          info =
+            case info.master do
+              true ->
+                "role:master\nmaster_replid:#{info.run_id}\nmaster_repl_offset:0\n"
+
+              false ->
+                "role:slave\nmaster_host:#{info.master_host}\nmaster_port:#{info.master_port}\n"
+            end
+
+          :gen_tcp.send(client, encode_bulk(info))
+
+        {:array, [bulk: "replconf", bulk: "listening-port", bulk: port]} ->
+          IO.puts("Listening port set to #{port}")
+          GenServer.call(KeyValue, {:add_slave, port})
+          :gen_tcp.send(client, "+OK\r\n")
+
+        {:array, [bulk: "replconf", bulk: "capa", bulk: "psync2"]} ->
+          IO.puts("PSYNC2 enabled")
+          :gen_tcp.send(client, "+OK\r\n")
+
+        {:array, [bulk: "psync", bulk: "?", bulk: "-1"]} ->
+          IO.puts("PSYNC requested")
+          :gen_tcp.send(client, "+FULLRESYNC #{info.run_id} 0\r\n")
+          :gen_tcp.send(client, "$#{byte_size(rdb_fake)}\r\n#{rdb_fake}")
+
+        _ ->
+          :gen_tcp.send(client, "Invalid command\r\n")
+      end
+
+    if propagate && info.master do
+      slaves = GenServer.call(KeyValue, {:get_slaves})
+      IO.inspect(slaves)
+
+      Enum.each(slaves, fn pid ->
+        {:ok, conn} =
+          :gen_tcp.connect({127, 0, 0, 1}, String.to_integer(pid), [:binary, active: false, packet: :line])
+
+        :gen_tcp.send(conn, data)
+        :gen_tcp.close(conn)
+      end)
     end
   end
 
@@ -155,6 +182,7 @@ defmodule Server do
   def loop(client, master) do
     case :gen_tcp.recv(client, 0) do
       {:ok, data} ->
+        IO.puts("loop received: #{data}")
         exec(data, client, master)
         loop(client, master)
 
@@ -191,6 +219,7 @@ defmodule Server do
             nil ->
               %{
                 role: "master",
+                master: true,
                 run_id: run_id
               }
 
@@ -219,7 +248,7 @@ defmodule Server do
                 |> encode_array
               )
 
-              IO.inspect(:gen_tcp.recv(conn, 0))
+              IO.inspect("received", :gen_tcp.recv(conn, 0))
 
               :gen_tcp.send(
                 conn,
@@ -228,7 +257,7 @@ defmodule Server do
                 |> encode_array
               )
 
-              IO.inspect(:gen_tcp.recv(conn, 0))
+              IO.inspect("received", :gen_tcp.recv(conn, 0))
 
               :gen_tcp.send(
                 conn,
@@ -243,11 +272,12 @@ defmodule Server do
                 ["psync", "?", "-1"] |> Enum.map(&encode_bulk/1) |> encode_array
               )
 
-              IO.inspect(:gen_tcp.recv(conn, 0))
+              IO.inspect("received", :gen_tcp.recv(conn, 0))
               :gen_tcp.close(conn)
 
               %{
                 role: "slave",
+                master: false,
                 run_id: run_id,
                 master_host: master_host,
                 master_port: master_port
