@@ -41,7 +41,7 @@ defmodule Server do
   def parse_bulk(data, _count) do
     case data do
       [s | rest] ->
-        {{:bulk, s}, rest}
+        {{:bulk, String.downcase(s)}, rest}
     end
   end
 
