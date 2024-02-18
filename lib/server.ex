@@ -238,7 +238,11 @@ defmodule Server do
               )
 
               # :gen_tcp.send(conn, encode_array([encode_bulk("psync"), encode_bulk("?"), encode_bulk("-1")], 3))
-              :gen_tcp.send(conn, ["psync", "?", "-1"] |> Enum.map(&encode_bulk/1) |> Enum.join())
+              :gen_tcp.send(
+                conn,
+                ["psync", "?", "-1"] |> Enum.map(&encode_bulk/1) |> encode_array
+              )
+
               IO.inspect(:gen_tcp.recv(conn, 0))
               :gen_tcp.close(conn)
 
