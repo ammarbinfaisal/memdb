@@ -170,8 +170,6 @@ defmodule Server do
           {:error, reason} ->
             IO.puts("Error connecting to slave: #{reason}")
         end
-        :gen_tcp.send(conn, data)
-        :gen_tcp.close(conn)
       end)
     end
   end
