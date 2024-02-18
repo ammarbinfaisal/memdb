@@ -111,6 +111,10 @@ defmodule Server do
     "$#{byte_size(data)}\r\n#{data}\r\n"
   end
 
+  def encode_array(data, length) do
+    "*#{length}\r\n#{Enum.join(data)}\r\n"
+  end
+
   def loop(client, master) do
     case :gen_tcp.recv(client, 0) do
       {:ok, data} ->
@@ -140,17 +144,35 @@ defmodule Server do
     case res do
       {:ok, socket} ->
         KeyValue.start_link
+        run_id = Base.encode16(:crypto.strong_rand_bytes(20))
         info = case master do
           nil -> %{
             role: "master",
-            run_id: Base.encode16(:crypto.strong_rand_bytes(20))
+            run_id: run_id
           }
           {host, port} -> %{
             role: "slave",
-            run_id: Base.encode16(:crypto.strong_rand_bytes(20)),
+            run_id: run_id,
             master_host: host,
             master_port: port
           }
+
+          # handshake with master
+          opts = [:binary, :inet, active: false, packet: :line]
+          # convert ip string to tuple
+          ip = String.split(host, ".") |> Enum.map(&String.to_integer/1) |> List.to_tuple
+          {:ok, conn} = :gen_tcp.connect(ip, port, opts)
+          IO.inspect conn
+          :gen_tcp.send(conn, encode_array([encode_bulk("ping")], 1))
+          case :gen_tcp.recv(conn, 0) do
+            {:ok, data} ->
+              IO.inspect data
+              :gen_tcp.send(conn, encode_array([encode_bulk("replconf"), encode_bulk("ack"), encode_bulk(run_id)], 3))
+              case :gen_tcp.recv(conn, 0) do
+                {:ok, data} ->
+                  IO.inspect data
+              end
+          end
         end
         loop_acceptor(socket, info)
       {:error, err} ->
