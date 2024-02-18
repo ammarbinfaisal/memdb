@@ -153,7 +153,8 @@ defmodule Server do
                 "role:master\nmaster_replid:#{info.run_id}\nmaster_repl_offset:0\n"
 
               false ->
-                "role:slave\nmaster_host:#{info.master_host}\nmaster_port:#{info.master_port}\n"
+                master_host = info.master_host |> Tuple.to_list() |> Enum.join(".")
+                "role:slave\nmaster_host:#{master_host}\nmaster_port:#{info.master_port}\n"
             end
 
           :gen_tcp.send(client, encode_bulk(info))
