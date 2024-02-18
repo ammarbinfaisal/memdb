@@ -7,15 +7,21 @@ defmodule Server do
 
   def start(_type, _args) do
     args = System.argv()
-    port = args |> Enum.at(1)
-    port = String.to_integer(port || "6379")
+    port = args |> Enum.at(0)
+    IO.puts("Starting server on port #{port}")
+    port = case port do
+      nil -> 6379
+      _ -> String.to_integer(port)
+    end
+
+    IO.puts("Starting server on port #{port}")
     # if replicaof is set, then we are a slave
     # find --replicaof host port
-    replicaof_host = args |> Enum.at(3)
-    replicaof_port = args |> Enum.at(4)
+    replicaof_host = args |> Enum.at(2)
+    replicaof_port = args |> Enum.at(3)
 
     if replicaof_host && replicaof_port do
-      IO.puts("Starting as a slave")
+      IO.puts("Starting as a slave of #{replicaof_host}:#{replicaof_port} at port #{port}")
       listen(port, {replicaof_host, String.to_integer(replicaof_port)})
     else
       IO.puts("Starting as a master")
