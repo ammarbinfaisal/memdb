@@ -248,7 +248,7 @@ defmodule Server do
                 |> encode_array
               )
 
-              IO.inspect("received", :gen_tcp.recv(conn, 0))
+              IO.inspect(:gen_tcp.recv(conn, 0))
 
               :gen_tcp.send(
                 conn,
@@ -257,7 +257,7 @@ defmodule Server do
                 |> encode_array
               )
 
-              IO.inspect("received", :gen_tcp.recv(conn, 0))
+              IO.inspect(:gen_tcp.recv(conn, 0))
 
               :gen_tcp.send(
                 conn,
@@ -272,7 +272,7 @@ defmodule Server do
                 ["psync", "?", "-1"] |> Enum.map(&encode_bulk/1) |> encode_array
               )
 
-              IO.inspect("received", :gen_tcp.recv(conn, 0))
+              IO.inspect(:gen_tcp.recv(conn, 0))
               :gen_tcp.close(conn)
 
               %{
