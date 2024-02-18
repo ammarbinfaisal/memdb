@@ -48,7 +48,7 @@ defmodule Server do
   def parse_simple(data) do
     case data do
       [s | rest] ->
-        {{:simple, s}, rest}
+        {{:simple, String.downcase(s)}, rest}
     end
   end
 
