@@ -103,12 +103,10 @@ defmodule Server do
 
         {:array, [bulk: "get", bulk: key]} ->
           value = GenServer.call(KeyValue, {:get, key})
-
           case value do
             nil -> :gen_tcp.send(client, "$-1\r\n")
             _ -> :gen_tcp.send(client, encode_bulk(value))
           end
-
           true
 
         {:array, [bulk: "set", bulk: key, bulk: value]} ->
@@ -165,11 +163,11 @@ defmodule Server do
           :gen_tcp.send(client, "+OK\r\n")
 
         {:array, [bulk: "replconf", bulk: "capa", bulk: "psync2"]} ->
-          IO.puts("PSYNC2 enabled")
+          # we are not doing anything
+          # justa a fake ok
           :gen_tcp.send(client, "+OK\r\n")
 
         {:array, [bulk: "psync", bulk: "?", bulk: "-1"]} ->
-          IO.puts("PSYNC requested")
           :gen_tcp.send(client, "+FULLRESYNC #{info.run_id} 0\r\n")
           :gen_tcp.send(client, "$#{byte_size(rdb_fake)}\r\n#{rdb_fake}")
 
@@ -179,10 +177,9 @@ defmodule Server do
 
     if propagate && info.master do
       slaves = GenServer.call(KeyValue, {:get_slaves})
-      IO.inspect(slaves)
 
       Enum.each(slaves, fn pid ->
-        case :gen_tcp.connect({127, 0, 0, 1}, String.to_integer(pid), [
+        case :gen_tcp.connect({127, 0, 0, 1}, pid, [
                :binary,
                active: false,
                packet: :line
