@@ -71,7 +71,7 @@ defmodule Server do
     GenServer.call(KeyValue, {:delete, key})
   end
 
-  def exec(data, client, master) do
+  def exec(data, client, info) do
     {parsed, _} = parse(String.split(data, "\r\n"))
     IO.inspect(parsed)
     case parsed do
@@ -98,9 +98,9 @@ defmodule Server do
         IO.inspect(value)
         :gen_tcp.send(client,"+OK\r\n")
       {:array, [bulk: "info", bulk: "replication"]} ->
-        info = case master do
-          nil -> "role:master"
-          {host, port} -> "role:slave\nmaster_host:#{host}\nmaster_port:#{port}"
+        info = case info.role do
+          "master" -> "role:master\nmaster_replid:#{info.run_id}\nmaster_repl_offset:0\n"
+          "slave" -> "role:slave\nmaster_host:#{info.master_host}\nmaster_port:#{info.master_port}\n"
         end
         :gen_tcp.send(client, encode_bulk(info))
       _ -> :gen_tcp.send(client, "Invalid command\r\n")
@@ -121,11 +121,11 @@ defmodule Server do
     end
   end
 
-  defp loop_acceptor(socket, master) do
+  defp loop_acceptor(socket, info) do
     case :gen_tcp.accept(socket) do
       {:ok, client} ->
-        spawn(fn -> loop(client, master) end)
-        loop_acceptor(socket, master)
+        spawn(fn -> loop(client, info) end)
+        loop_acceptor(socket, info)
       {:error, reason} ->
         IO.puts "Error accepting connection: #{reason}"
     end
@@ -140,7 +140,19 @@ defmodule Server do
     case res do
       {:ok, socket} ->
         KeyValue.start_link
-        loop_acceptor(socket, master)
+        info = case master do
+          nil -> %{
+            role: "master",
+            run_id: Base.encode16(:crypto.strong_rand_bytes(20))
+          }
+          {host, port} -> %{
+            role: "slave",
+            run_id: Base.encode16(:crypto.strong_rand_bytes(20)),
+            master_host: host,
+            master_port: port
+          }
+        end
+        loop_acceptor(socket, info)
       {:error, err} ->
         IO.inspect err
         System.halt(1)
