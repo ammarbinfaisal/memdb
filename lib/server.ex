@@ -7,18 +7,16 @@ defmodule Server do
 
   def start(_type, _args) do
     args = System.argv()
-    port = args |> Enum.at(0)
-    IO.puts("Starting server on port #{port}")
-    port = case port do
-      nil -> 6379
-      _ -> String.to_integer(port)
-    end
+    port = args |> Enum.at(1)
 
-    IO.puts("Starting server on port #{port}")
-    # if replicaof is set, then we are a slave
-    # find --replicaof host port
-    replicaof_host = args |> Enum.at(2)
-    replicaof_port = args |> Enum.at(3)
+    port =
+      case port do
+        nil -> 6379
+        _ -> String.to_integer(port)
+      end
+
+    replicaof_host = args |> Enum.at(3)
+    replicaof_port = args |> Enum.at(4)
 
     if replicaof_host && replicaof_port do
       IO.puts("Starting as a slave of #{replicaof_host}:#{replicaof_port} at port #{port}")
@@ -150,8 +148,8 @@ defmodule Server do
     "$#{byte_size(data)}\r\n#{data}\r\n"
   end
 
-  def encode_array(data, length) do
-    "*#{length}\r\n#{Enum.join(data)}"
+  def encode_array(data) do
+    "*#{Enum.count(data)}\r\n#{Enum.join(data)}"
   end
 
   def loop(client, master) do
@@ -180,6 +178,7 @@ defmodule Server do
   Listen for incoming connections
   """
   def listen(port, master) do
+    IO.puts("Listening on port #{port}")
     res = :gen_tcp.listen(port, [:binary, active: false, reuseaddr: true])
 
     case res do
@@ -209,23 +208,33 @@ defmodule Server do
                     |> List.to_tuple()
                 end
 
-              {:ok, conn} = :gen_tcp.connect(ip, port, opts)
+              {:ok, conn} = :gen_tcp.connect(ip, master_port, opts)
 
-              :gen_tcp.send(conn, ["ping"] |> Enum.map(&encode_bulk/1) |> Enum.join())
-              IO.inspect(:gen_tcp.recv(conn, 0))
+              IO.inspect(conn)
 
               :gen_tcp.send(
                 conn,
-                ["replconf", "listening-port", Integer.to_string(port)]
+                ["ping"]
                 |> Enum.map(&encode_bulk/1)
-                |> Enum.join()
+                |> encode_array
               )
 
               IO.inspect(:gen_tcp.recv(conn, 0))
 
               :gen_tcp.send(
                 conn,
-                ["replconf", "capa", "psync2"] |> Enum.map(&encode_bulk/1) |> Enum.join()
+                ["replconf", "listening-port", "#{Integer.to_string(port)}"]
+                |> Enum.map(&encode_bulk/1)
+                |> encode_array
+              )
+
+              IO.inspect(:gen_tcp.recv(conn, 0))
+
+              :gen_tcp.send(
+                conn,
+                ["replconf", "capa", "psync2\r\n"]
+                |> Enum.map(&encode_bulk/1)
+                |> encode_array
               )
 
               # :gen_tcp.send(conn, encode_array([encode_bulk("psync"), encode_bulk("?"), encode_bulk("-1")], 3))
