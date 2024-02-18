@@ -150,33 +150,33 @@ defmodule Server do
             role: "master",
             run_id: run_id
           }
-          {host, port} -> %{
-            role: "slave",
-            run_id: run_id,
-            master_host: host,
-            master_port: port
-          }
-
-          # handshake with master
-          opts = [:binary, :inet, active: false, packet: :line]
-          # convert ip string to tuple
-          ip = case host do
-            "localhost" -> {127, 0, 0, 1}
-            _ -> String.split(host, ".") |> Enum.map(&String.to_integer/1) |> List.to_tuple
-          end
-          {:ok, conn} = :gen_tcp.connect(ip, port, opts)
-          IO.inspect conn
-          :gen_tcp.send(conn, encode_array([encode_bulk("ping")], 1))
-          # case :gen_tcp.recv(conn, 0) do
-          #   {:ok, data} ->
-          #     IO.inspect data
-          #     :gen_tcp.send(conn, encode_array([encode_bulk("replconf"), encode_bulk("ack"), encode_bulk(run_id)], 3))
-          #     case :gen_tcp.recv(conn, 0) do
-          #       {:ok, data} ->
-          #         IO.inspect data
-          #     end
-          # end
-          :gen_tcp.close(conn)
+          {host, port} ->
+            # handshake with master
+            opts = [:binary, :inet, active: false, packet: :line]
+            # convert ip string to tuple
+            ip = case host do
+              "localhost" -> {127, 0, 0, 1}
+              _ -> String.split(host, ".") |> Enum.map(&String.to_integer/1) |> List.to_tuple
+            end
+            {:ok, conn} = :gen_tcp.connect(ip, port, opts)
+            IO.inspect conn
+            :gen_tcp.send(conn, encode_array([encode_bulk("ping")], 1))
+            # case :gen_tcp.recv(conn, 0) do
+            #   {:ok, data} ->
+            #     IO.inspect data
+            #     :gen_tcp.send(conn, encode_array([encode_bulk("replconf"), encode_bulk("ack"), encode_bulk(run_id)], 3))
+            #     case :gen_tcp.recv(conn, 0) do
+            #       {:ok, data} ->
+            #         IO.inspect data
+            #     end
+            # end
+            :gen_tcp.close(conn)
+            %{
+              role: "slave",
+              run_id: run_id,
+              master_host: host,
+              master_port: port
+            }
         end
         loop_acceptor(socket, info)
       {:error, err} ->
